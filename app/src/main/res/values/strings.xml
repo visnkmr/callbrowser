@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Call Browser</string>
+    <string name="all_calls">All Calls</string>
+    <string name="incoming">Incoming</string>
+    <string name="outgoing">Outgoing</string>
+    <string name="missed">Missed</string>
+    <string name="saved_contacts">Saved Contacts</string>
+    <string name="unsaved_numbers">Unsaved Numbers</string>
+    <string name="no_calls_found">No calls found</string>
+    <string name="grant_permissions">Grant Permissions</string>
+    <string name="permissions_required">Call log and contacts permissions are required</string>
+</resources>
