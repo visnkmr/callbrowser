@@ -19,6 +19,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE normalizedAddress = :normalizedNumber ORDER BY date DESC")
     suspend fun getMessagesForNumberSync(normalizedNumber: String): List<MessageEntity>
     
+    @Query("SELECT * FROM messages WHERE normalizedAddress = :normalizedNumber ORDER BY date DESC LIMIT :limit OFFSET :offset")
+    suspend fun getMessagesForNumberPaged(normalizedNumber: String, limit: Int, offset: Int): List<MessageEntity>
+    
     @Query("""
         SELECT normalizedAddress, address, name, MAX(date) as date, 
                COUNT(*) as messageCount, MAX(type) as type, 

@@ -13,6 +13,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.callbrowser.data.repository.CommunicationRepository
 import com.example.callbrowser.databinding.ActivityCallHistoryBinding
 import kotlinx.coroutines.Dispatchers
@@ -27,12 +28,18 @@ class CallHistoryActivity : AppCompatActivity() {
     private lateinit var repository: CommunicationRepository
     private var currentPhoneNumber: String = ""
     private var currentContactName: String? = null
+    
+    // Pagination state
+    private var currentPage = 0
+    private var isLoading = false
+    private var hasMoreData = true
+    private val pageSize = 50
+    private val loadedItems = mutableListOf<Any>()
 
     companion object {
         const val EXTRA_PHONE_NUMBER = "extra_phone_number"
         const val EXTRA_CONTACT_NAME = "extra_contact_name"
         private const val CALL_PERMISSION_REQUEST = 1001
-        private const val HISTORY_ITEM_LIMIT = 500
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,7 +61,7 @@ class CallHistoryActivity : AppCompatActivity() {
         setupActionButtons()
 
         if (checkPermissions()) {
-            loadCallHistory(currentPhoneNumber)
+            loadInitialData()
         } else {
             Toast.makeText(this, "Permission required to view call history", Toast.LENGTH_SHORT).show()
             finish()
@@ -84,6 +91,26 @@ class CallHistoryActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@CallHistoryActivity)
             adapter = this@CallHistoryActivity.adapter
             setHasFixedSize(true)
+            
+            // Add scroll listener for infinite loading
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    super.onScrolled(recyclerView, dx, dy)
+                    
+                    val layoutManager = recyclerView.layoutManager as LinearLayoutManager
+                    val visibleItemCount = layoutManager.childCount
+                    val totalItemCount = layoutManager.itemCount
+                    val firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition()
+                    
+                    // Load more when user scrolls to bottom (last 10 items)
+                    if (!isLoading && hasMoreData) {
+                        if ((visibleItemCount + firstVisibleItemPosition) >= totalItemCount - 10
+                            && firstVisibleItemPosition >= 0) {
+                            loadMoreItems()
+                        }
+                    }
+                }
+            })
         }
     }
 
@@ -162,43 +189,66 @@ class CallHistoryActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadCallHistory(phoneNumber: String) {
+    private fun loadInitialData() {
         lifecycleScope.launch {
             binding.progressBar.visibility = View.VISIBLE
-
-            val combinedList = withContext(Dispatchers.IO) {
-                repository.getDetailedHistory(phoneNumber, HISTORY_ITEM_LIMIT)
+            isLoading = true
+            
+            // Load stats (total counts from all data)
+            val counts = withContext(Dispatchers.IO) {
+                repository.getHistoryCounts(currentPhoneNumber)
             }
-
-            adapter.submitList(combinedList)
-            binding.progressBar.visibility = View.GONE
-
-            if (combinedList.isEmpty()) {
+            
+            binding.textViewTotalCalls.text = "${counts.first} calls"
+            binding.textViewTotalMessages.text = "${counts.second} messages"
+            binding.textViewTotalTalkTime.text = "Total: ${formatDuration(counts.third)}"
+            
+            // Load first page
+            currentPage = 0
+            loadedItems.clear()
+            hasMoreData = true
+            
+            val pageData = withContext(Dispatchers.IO) {
+                repository.getDetailedHistoryPaged(currentPhoneNumber, currentPage, pageSize)
+            }
+            
+            if (pageData.isEmpty()) {
                 binding.textViewEmpty.visibility = View.VISIBLE
+                hasMoreData = false
             } else {
                 binding.textViewEmpty.visibility = View.GONE
-
-                // Calculate stats from all items (not limited)
-                val calls = combinedList.filterIsInstance<CallLogEntry>()
-                val messages = combinedList.filterIsInstance<MessageEntry>()
-
-                val totalCalls = calls.size
-                val totalMessages = messages.size
-                val totalDuration = calls.sumOf { it.duration }
-
-                binding.textViewTotalCalls.text = "$totalCalls calls"
-                binding.textViewTotalMessages.text = "$totalMessages messages"
-                binding.textViewTotalTalkTime.text = "Total: ${formatDuration(totalDuration)}"
-
-                // Show warning if list was limited
-                if (combinedList.size >= HISTORY_ITEM_LIMIT) {
-                    Toast.makeText(
-                        this@CallHistoryActivity,
-                        "Showing last $HISTORY_ITEM_LIMIT items only",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+                loadedItems.addAll(pageData)
+                adapter.submitList(loadedItems.toList())
+                
+                // Check if we have more data
+                hasMoreData = pageData.size >= pageSize
             }
+            
+            isLoading = false
+            binding.progressBar.visibility = View.GONE
+        }
+    }
+
+    private fun loadMoreItems() {
+        if (isLoading || !hasMoreData) return
+        
+        lifecycleScope.launch {
+            isLoading = true
+            currentPage++
+            
+            val pageData = withContext(Dispatchers.IO) {
+                repository.getDetailedHistoryPaged(currentPhoneNumber, currentPage, pageSize)
+            }
+            
+            if (pageData.isNotEmpty()) {
+                loadedItems.addAll(pageData)
+                adapter.submitList(loadedItems.toList())
+                hasMoreData = pageData.size >= pageSize
+            } else {
+                hasMoreData = false
+            }
+            
+            isLoading = false
         }
     }
 

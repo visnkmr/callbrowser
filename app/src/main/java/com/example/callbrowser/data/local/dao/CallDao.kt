@@ -19,6 +19,9 @@ interface CallDao {
     @Query("SELECT * FROM calls WHERE normalizedNumber = :normalizedNumber ORDER BY date DESC")
     suspend fun getCallsForNumberSync(normalizedNumber: String): List<CallEntity>
     
+    @Query("SELECT * FROM calls WHERE normalizedNumber = :normalizedNumber ORDER BY date DESC LIMIT :limit OFFSET :offset")
+    suspend fun getCallsForNumberPaged(normalizedNumber: String, limit: Int, offset: Int): List<CallEntity>
+    
     @Query("""
         SELECT normalizedNumber, number, name, MAX(date) as date, 
                COUNT(*) as callCount, SUM(duration) as totalDuration,

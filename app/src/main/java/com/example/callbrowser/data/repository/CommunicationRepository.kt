@@ -85,8 +85,63 @@ class CommunicationRepository(private val context: Context) {
         }
     }
     
-    // Get detailed history for a specific number with pagination support
-    suspend fun getDetailedHistory(phoneNumber: String, limit: Int = 500): List<Any> {
+    // Get total counts for a specific number (for stats display)
+    suspend fun getHistoryCounts(phoneNumber: String): Triple<Int, Int, Long> {
+        val normalizedNumber = normalizePhoneNumber(phoneNumber)
+        
+        val calls = callDao.getCallsForNumberSync(normalizedNumber)
+        val messages = messageDao.getMessagesForNumberSync(normalizedNumber)
+        
+        val totalCalls = calls.size
+        val totalMessages = messages.size
+        val totalDuration = calls.sumOf { it.duration }
+        
+        return Triple(totalCalls, totalMessages, totalDuration)
+    }
+    
+    // Get paginated history for a specific number - optimized for virtualization
+    suspend fun getDetailedHistoryPaged(phoneNumber: String, page: Int, pageSize: Int = 50): List<Any> {
+        val normalizedNumber = normalizePhoneNumber(phoneNumber)
+        val offset = page * pageSize
+        
+        // Fetch only the needed page from database
+        val calls = callDao.getCallsForNumberPaged(normalizedNumber, pageSize, offset).map { entity ->
+            CallLogEntry(
+                id = entity.id,
+                number = entity.number,
+                name = entity.name,
+                type = entity.type,
+                date = entity.date,
+                duration = entity.duration,
+                isContactSaved = entity.isContactSaved
+            )
+        }
+        
+        val messages = messageDao.getMessagesForNumberPaged(normalizedNumber, pageSize, offset).map { entity ->
+            MessageEntry(
+                id = entity.id,
+                number = entity.address,
+                name = entity.name,
+                type = entity.type,
+                date = entity.date,
+                body = entity.body,
+                isContactSaved = entity.isContactSaved,
+                read = entity.read
+            )
+        }
+        
+        // Combine and sort by date
+        return (calls + messages).sortedByDescending {
+            when (it) {
+                is CallLogEntry -> it.date
+                is MessageEntry -> it.date
+                else -> 0L
+            }
+        }
+    }
+    
+    // Get all history (for smaller datasets or when needed)
+    suspend fun getDetailedHistory(phoneNumber: String): List<Any> {
         val normalizedNumber = normalizePhoneNumber(phoneNumber)
         
         val calls = callDao.getCallsForNumberSync(normalizedNumber).map { entity ->
@@ -114,16 +169,14 @@ class CommunicationRepository(private val context: Context) {
             )
         }
         
-        // Combine and sort by date, then limit to prevent UI hanging
-        return (calls + messages)
-            .sortedByDescending {
-                when (it) {
-                    is CallLogEntry -> it.date
-                    is MessageEntry -> it.date
-                    else -> 0L
-                }
+        // Combine and sort by date
+        return (calls + messages).sortedByDescending {
+            when (it) {
+                is CallLogEntry -> it.date
+                is MessageEntry -> it.date
+                else -> 0L
             }
-            .take(limit)
+        }
     }
     
     // Initial full sync
