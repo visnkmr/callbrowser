@@ -8,7 +8,8 @@ data class CallLogEntry(
     val date: Long,
     val duration: Long,
     val isContactSaved: Boolean,
-    val callCount: Int = 1
+    val callCount: Int = 1,
+    val messageCount: Int = 0
 ) {
     companion object {
         const val TYPE_INCOMING = 1

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.CallLog
 import android.provider.ContactsContract
+import android.provider.Telephony
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -26,10 +27,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var callAdapter: CallLogAdapter
     private var allCalls = listOf<CallLogEntry>()
+    private var allMessages = listOf<MessageEntry>()
     private var uniqueCalls = listOf<CallLogEntry>()
-    
+
     private var currentCallType = CALL_TYPE_ALL
     private var currentContactFilter = CONTACT_ALL
+    private var currentContentType = CONTENT_TYPE_ALL
     
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
@@ -40,6 +43,9 @@ class MainActivity : AppCompatActivity() {
         private const val CONTACT_ALL = 0
         private const val CONTACT_SAVED = 1
         private const val CONTACT_UNSAVED = 2
+        private const val CONTENT_TYPE_ALL = 0
+        private const val CONTENT_TYPE_CALLS = 1
+        private const val CONTENT_TYPE_MESSAGES = 2
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +61,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupSpinners() {
+        val contentTypeAdapter = ArrayAdapter.createFromResource(
+            this,
+            R.array.content_types,
+            android.R.layout.simple_spinner_item
+        )
+        contentTypeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.spinnerContentType.adapter = contentTypeAdapter
+        binding.spinnerContentType.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                currentContentType = position
+                applyFilters()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+
         val callTypeAdapter = ArrayAdapter.createFromResource(
             this,
             R.array.call_types,
@@ -110,13 +131,14 @@ class MainActivity : AppCompatActivity() {
     private fun checkPermissions() {
         val permissions = arrayOf(
             Manifest.permission.READ_CALL_LOG,
-            Manifest.permission.READ_CONTACTS
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.READ_SMS
         )
-        
+
         val allGranted = permissions.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
         }
-        
+
         if (allGranted) {
             showMainContent()
             loadCallLogs()
@@ -130,7 +152,8 @@ class MainActivity : AppCompatActivity() {
             this,
             arrayOf(
                 Manifest.permission.READ_CALL_LOG,
-                Manifest.permission.READ_CONTACTS
+                Manifest.permission.READ_CONTACTS,
+                Manifest.permission.READ_SMS
             ),
             PERMISSION_REQUEST_CODE
         )
@@ -165,29 +188,69 @@ class MainActivity : AppCompatActivity() {
     private fun loadCallLogs() {
         lifecycleScope.launch {
             binding.progressBar.visibility = View.VISIBLE
-            
-            allCalls = withContext(Dispatchers.IO) {
-                fetchCallLogs()
+
+            val contactNumbers = withContext(Dispatchers.IO) {
+                getSavedContactNumbers()
             }
-            
-            // Deduplicate calls by phone number - keep most recent for each number with count
-            uniqueCalls = allCalls
-                .groupBy { normalizePhoneNumber(it.number) }
-                .map { (_, calls) ->
-                    val mostRecent = calls.maxByOrNull { it.date }!!
-                    mostRecent.copy(callCount = calls.size)
+
+            allCalls = withContext(Dispatchers.IO) {
+                fetchCallLogs(contactNumbers)
+            }
+
+            allMessages = withContext(Dispatchers.IO) {
+                fetchMessages(contactNumbers)
+            }
+
+            // Merge calls and messages by phone number
+            val normalizedCalls = allCalls.groupBy { normalizePhoneNumber(it.number) }
+            val normalizedMessages = allMessages.groupBy { normalizePhoneNumber(it.number) }
+            val allNumbers = (normalizedCalls.keys + normalizedMessages.keys).toSet()
+
+            uniqueCalls = allNumbers.map { normalizedNumber ->
+                val calls = normalizedCalls[normalizedNumber] ?: emptyList()
+                val messages = normalizedMessages[normalizedNumber] ?: emptyList()
+
+                val mostRecentCall = calls.maxByOrNull { it.date }
+                val mostRecentMessage = messages.maxByOrNull { it.date }
+
+                // Determine which is more recent - call or message
+                val useCall = when {
+                    mostRecentCall == null -> false
+                    mostRecentMessage == null -> true
+                    else -> mostRecentCall.date >= mostRecentMessage.date
                 }
-                .sortedByDescending { it.date }
-            
+
+                if (useCall && mostRecentCall != null) {
+                    mostRecentCall.copy(
+                        callCount = calls.size,
+                        messageCount = messages.size
+                    )
+                } else if (mostRecentMessage != null) {
+                    // Create a CallLogEntry from message data for display purposes
+                    CallLogEntry(
+                        id = mostRecentMessage.id,
+                        number = mostRecentMessage.number,
+                        name = mostRecentMessage.name,
+                        type = -1, // Special type to indicate this is from message
+                        date = mostRecentMessage.date,
+                        duration = 0,
+                        isContactSaved = mostRecentMessage.isContactSaved,
+                        callCount = calls.size,
+                        messageCount = messages.size
+                    )
+                } else {
+                    null
+                }
+            }.filterNotNull().sortedByDescending { it.date }
+
             applyFilters()
             binding.progressBar.visibility = View.GONE
         }
     }
 
-    private fun fetchCallLogs(): List<CallLogEntry> {
+    private fun fetchCallLogs(contactNumbers: Set<String>): List<CallLogEntry> {
         val calls = mutableListOf<CallLogEntry>()
-        val contactNumbers = getSavedContactNumbers()
-        
+
         val cursor = contentResolver.query(
             CallLog.Calls.CONTENT_URI,
             arrayOf(
@@ -202,7 +265,7 @@ class MainActivity : AppCompatActivity() {
             null,
             CallLog.Calls.DATE + " DESC"
         )
-        
+
         cursor?.use {
             val idIndex = it.getColumnIndex(CallLog.Calls._ID)
             val numberIndex = it.getColumnIndex(CallLog.Calls.NUMBER)
@@ -210,11 +273,11 @@ class MainActivity : AppCompatActivity() {
             val typeIndex = it.getColumnIndex(CallLog.Calls.TYPE)
             val dateIndex = it.getColumnIndex(CallLog.Calls.DATE)
             val durationIndex = it.getColumnIndex(CallLog.Calls.DURATION)
-            
+
             while (it.moveToNext()) {
                 val number = it.getString(numberIndex) ?: "Unknown"
                 val normalizedNumber = normalizePhoneNumber(number)
-                
+
                 val call = CallLogEntry(
                     id = it.getString(idIndex),
                     number = number,
@@ -222,15 +285,64 @@ class MainActivity : AppCompatActivity() {
                     type = it.getInt(typeIndex),
                     date = it.getLong(dateIndex),
                     duration = it.getLong(durationIndex),
-                    isContactSaved = contactNumbers.any { contact -> 
+                    isContactSaved = contactNumbers.any { contact ->
                         normalizedNumber.contains(contact) || contact.contains(normalizedNumber)
                     }
                 )
                 calls.add(call)
             }
         }
-        
+
         return calls
+    }
+
+    private fun fetchMessages(contactNumbers: Set<String>): List<MessageEntry> {
+        val messages = mutableListOf<MessageEntry>()
+
+        val cursor = contentResolver.query(
+            Telephony.Sms.CONTENT_URI,
+            arrayOf(
+                Telephony.Sms._ID,
+                Telephony.Sms.ADDRESS,
+                Telephony.Sms.TYPE,
+                Telephony.Sms.DATE,
+                Telephony.Sms.BODY,
+                Telephony.Sms.READ
+            ),
+            null,
+            null,
+            Telephony.Sms.DATE + " DESC"
+        )
+
+        cursor?.use {
+            val idIndex = it.getColumnIndex(Telephony.Sms._ID)
+            val addressIndex = it.getColumnIndex(Telephony.Sms.ADDRESS)
+            val typeIndex = it.getColumnIndex(Telephony.Sms.TYPE)
+            val dateIndex = it.getColumnIndex(Telephony.Sms.DATE)
+            val bodyIndex = it.getColumnIndex(Telephony.Sms.BODY)
+            val readIndex = it.getColumnIndex(Telephony.Sms.READ)
+
+            while (it.moveToNext()) {
+                val address = it.getString(addressIndex) ?: continue
+                val normalizedNumber = normalizePhoneNumber(address)
+
+                val message = MessageEntry(
+                    id = it.getString(idIndex),
+                    number = address,
+                    name = null, // SMS doesn't have cached name like call log
+                    type = it.getInt(typeIndex),
+                    date = it.getLong(dateIndex),
+                    body = it.getString(bodyIndex) ?: "",
+                    isContactSaved = contactNumbers.any { contact ->
+                        normalizedNumber.contains(contact) || contact.contains(normalizedNumber)
+                    },
+                    read = it.getInt(readIndex) == 1
+                )
+                messages.add(message)
+            }
+        }
+
+        return messages
     }
 
     private fun getSavedContactNumbers(): Set<String> {
@@ -261,25 +373,34 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyFilters() {
-        val filteredCalls = uniqueCalls.filter { call ->
+        val filteredItems = uniqueCalls.filter { item ->
+            // Content type filter (Calls/Messages/All)
+            val contentMatch = when (currentContentType) {
+                CONTENT_TYPE_CALLS -> item.callCount > 0
+                CONTENT_TYPE_MESSAGES -> item.messageCount > 0 && item.type == -1
+                else -> true
+            }
+
+            // Call type filter (only applies to items with calls)
             val typeMatch = when (currentCallType) {
-                CALL_TYPE_INCOMING -> call.type == CallLogEntry.TYPE_INCOMING
-                CALL_TYPE_OUTGOING -> call.type == CallLogEntry.TYPE_OUTGOING
-                CALL_TYPE_MISSED -> call.type == CallLogEntry.TYPE_MISSED
+                CALL_TYPE_INCOMING -> item.type == CallLogEntry.TYPE_INCOMING
+                CALL_TYPE_OUTGOING -> item.type == CallLogEntry.TYPE_OUTGOING
+                CALL_TYPE_MISSED -> item.type == CallLogEntry.TYPE_MISSED
                 else -> true
             }
-            
+
+            // Contact filter
             val contactMatch = when (currentContactFilter) {
-                CONTACT_SAVED -> call.isContactSaved
-                CONTACT_UNSAVED -> !call.isContactSaved
+                CONTACT_SAVED -> item.isContactSaved
+                CONTACT_UNSAVED -> !item.isContactSaved
                 else -> true
             }
-            
-            typeMatch && contactMatch
+
+            contentMatch && typeMatch && contactMatch
         }
-        
-        callAdapter.submitList(filteredCalls)
-        binding.textViewEmpty.visibility = if (filteredCalls.isEmpty()) View.VISIBLE else View.GONE
-        binding.textViewResultCount.text = "${filteredCalls.size} contacts"
+
+        callAdapter.submitList(filteredItems)
+        binding.textViewEmpty.visibility = if (filteredItems.isEmpty()) View.VISIBLE else View.GONE
+        binding.textViewResultCount.text = "${filteredItems.size} contacts"
     }
 }

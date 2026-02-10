@@ -1,11 +1,17 @@
 <resources>
+    <string-array name="content_types">
+        <item>All</item>
+        <item>Calls Only</item>
+        <item>Messages Only</item>
+    </string-array>
+
     <string-array name="call_types">
         <item>All Calls</item>
         <item>Incoming</item>
         <item>Outgoing</item>
         <item>Missed</item>
     </string-array>
-    
+
     <string-array name="contact_filters">
         <item>All Contacts</item>
         <item>Saved Contacts</item>

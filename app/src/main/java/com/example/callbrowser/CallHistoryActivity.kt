@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.CallLog
 import android.provider.ContactsContract
+import android.provider.Telephony
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -163,21 +164,36 @@ class CallHistoryActivity : AppCompatActivity() {
     private fun loadCallHistory(phoneNumber: String) {
         lifecycleScope.launch {
             binding.progressBar.visibility = View.VISIBLE
-            
+
             val calls = withContext(Dispatchers.IO) {
                 fetchCallsForNumber(phoneNumber)
             }
-            
-            adapter.submitList(calls)
+
+            val messages = withContext(Dispatchers.IO) {
+                fetchMessagesForNumber(phoneNumber)
+            }
+
+            // Merge calls and messages into a single list sorted by date
+            val combinedList = (calls + messages).sortedByDescending {
+                when (it) {
+                    is CallLogEntry -> it.date
+                    is MessageEntry -> it.date
+                    else -> 0L
+                }
+            }
+
+            adapter.submitList(combinedList)
             binding.progressBar.visibility = View.GONE
-            
-            if (calls.isEmpty()) {
+
+            if (combinedList.isEmpty()) {
                 binding.textViewEmpty.visibility = View.VISIBLE
             } else {
                 binding.textViewEmpty.visibility = View.GONE
                 val totalCalls = calls.size
+                val totalMessages = messages.size
                 val totalDuration = calls.sumOf { it.duration }
                 binding.textViewTotalCalls.text = "$totalCalls calls"
+                binding.textViewTotalMessages.text = "$totalMessages messages"
                 binding.textViewTotalTalkTime.text = "Total: ${formatDuration(totalDuration)}"
             }
         }
@@ -239,6 +255,52 @@ class CallHistoryActivity : AppCompatActivity() {
         }
         
         return calls
+    }
+
+    private fun fetchMessagesForNumber(phoneNumber: String): List<MessageEntry> {
+        val messages = mutableListOf<MessageEntry>()
+
+        val cursor = contentResolver.query(
+            Telephony.Sms.CONTENT_URI,
+            arrayOf(
+                Telephony.Sms._ID,
+                Telephony.Sms.ADDRESS,
+                Telephony.Sms.TYPE,
+                Telephony.Sms.DATE,
+                Telephony.Sms.BODY,
+                Telephony.Sms.READ
+            ),
+            "${Telephony.Sms.ADDRESS} = ? OR ${Telephony.Sms.ADDRESS} = ?",
+            arrayOf(phoneNumber, normalizePhoneNumber(phoneNumber)),
+            Telephony.Sms.DATE + " DESC"
+        )
+
+        cursor?.use {
+            val idIndex = it.getColumnIndex(Telephony.Sms._ID)
+            val addressIndex = it.getColumnIndex(Telephony.Sms.ADDRESS)
+            val typeIndex = it.getColumnIndex(Telephony.Sms.TYPE)
+            val dateIndex = it.getColumnIndex(Telephony.Sms.DATE)
+            val bodyIndex = it.getColumnIndex(Telephony.Sms.BODY)
+            val readIndex = it.getColumnIndex(Telephony.Sms.READ)
+
+            while (it.moveToNext()) {
+                val address = it.getString(addressIndex) ?: continue
+
+                val message = MessageEntry(
+                    id = it.getString(idIndex),
+                    number = address,
+                    name = currentContactName,
+                    type = it.getInt(typeIndex),
+                    date = it.getLong(dateIndex),
+                    body = it.getString(bodyIndex) ?: "",
+                    isContactSaved = currentContactName != null,
+                    read = it.getInt(readIndex) == 1
+                )
+                messages.add(message)
+            }
+        }
+
+        return messages
     }
 
     private fun normalizePhoneNumber(number: String): String {

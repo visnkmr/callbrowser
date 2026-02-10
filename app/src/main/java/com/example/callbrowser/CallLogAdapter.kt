@@ -44,20 +44,32 @@ class CallLogAdapter(
         fun bind(call: CallLogEntry) {
             binding.apply {
                 textViewName.text = call.name ?: call.number
-                textViewNumber.text = "${call.number} (${call.callCount})"
-                
+
+                // Show both call and message counts
+                val countsList = mutableListOf<String>()
+                if (call.callCount > 0) {
+                    countsList.add("${call.callCount} call${if (call.callCount > 1) "s" else ""}")
+                }
+                if (call.messageCount > 0) {
+                    countsList.add("${call.messageCount} msg${if (call.messageCount > 1) "s" else ""}")
+                }
+                val countsText = if (countsList.isNotEmpty()) " (${countsList.joinToString(", ")})" else ""
+                textViewNumber.text = "${call.number}$countsText"
+
                 val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
                 textViewDate.text = dateFormat.format(Date(call.date))
-                
+
                 textViewDuration.text = formatDuration(call.duration)
-                
+
+                // Handle type -1 which indicates this item is from messages only
                 val typeColor = when (call.type) {
                     CallLogEntry.TYPE_INCOMING -> root.context.getColor(R.color.incoming_green)
                     CallLogEntry.TYPE_OUTGOING -> root.context.getColor(R.color.outgoing_blue)
                     CallLogEntry.TYPE_MISSED -> root.context.getColor(R.color.missed_red)
+                    -1 -> root.context.getColor(R.color.message_purple)
                     else -> root.context.getColor(R.color.gray)
                 }
-                
+
                 val typeText = when (call.type) {
                     CallLogEntry.TYPE_INCOMING -> "Incoming"
                     CallLogEntry.TYPE_OUTGOING -> "Outgoing"
@@ -65,13 +77,21 @@ class CallLogAdapter(
                     CallLogEntry.TYPE_VOICEMAIL -> "Voicemail"
                     CallLogEntry.TYPE_REJECTED -> "Rejected"
                     CallLogEntry.TYPE_BLOCKED -> "Blocked"
+                    -1 -> "Message"
                     else -> "Unknown"
                 }
-                
+
                 textViewType.text = typeText
                 textViewType.setTextColor(typeColor)
+
+                // Set appropriate icon based on type
+                if (call.type == -1) {
+                    imageViewCallType.setImageResource(R.drawable.ic_message)
+                } else {
+                    imageViewCallType.setImageResource(R.drawable.ic_call)
+                }
                 imageViewCallType.setColorFilter(typeColor)
-                
+
                 // Add ripple effect for better click feedback
                 root.isClickable = true
                 root.isFocusable = true

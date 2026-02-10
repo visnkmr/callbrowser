@@ -60,6 +60,18 @@
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:text="Dec 24, 2024 • 14:30" />
 
+            <TextView
+                android:id="@+id/textViewMessageBody"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textSize="13sp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:maxLines="2"
+                android:ellipsize="end"
+                android:visibility="gone"
+                android:text="Message body text" />
+
         </LinearLayout>
 
         <TextView
