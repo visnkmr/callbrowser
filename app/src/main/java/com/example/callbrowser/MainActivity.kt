@@ -170,10 +170,13 @@ class MainActivity : AppCompatActivity() {
                 fetchCallLogs()
             }
             
-            // Deduplicate calls by phone number - keep most recent for each number
+            // Deduplicate calls by phone number - keep most recent for each number with count
             uniqueCalls = allCalls
                 .groupBy { normalizePhoneNumber(it.number) }
-                .map { (_, calls) -> calls.maxByOrNull { it.date }!! }
+                .map { (_, calls) ->
+                    val mostRecent = calls.maxByOrNull { it.date }!!
+                    mostRecent.copy(callCount = calls.size)
+                }
                 .sortedByDescending { it.date }
             
             applyFilters()

@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
 
 class CallHistoryActivity : AppCompatActivity() {
 
@@ -174,8 +175,24 @@ class CallHistoryActivity : AppCompatActivity() {
                 binding.textViewEmpty.visibility = View.VISIBLE
             } else {
                 binding.textViewEmpty.visibility = View.GONE
-                binding.textViewTotalCalls.text = "${calls.size} calls"
+                val totalCalls = calls.size
+                val totalDuration = calls.sumOf { it.duration }
+                binding.textViewTotalCalls.text = "$totalCalls calls"
+                binding.textViewTotalTalkTime.text = "Total: ${formatDuration(totalDuration)}"
             }
+        }
+    }
+
+    private fun formatDuration(seconds: Long): String {
+        if (seconds == 0L) return "0s"
+        val hours = TimeUnit.SECONDS.toHours(seconds)
+        val minutes = TimeUnit.SECONDS.toMinutes(seconds) % 60
+        val secs = seconds % 60
+        
+        return when {
+            hours > 0 -> String.format("%dh %dm %ds", hours, minutes, secs)
+            minutes > 0 -> String.format("%dm %ds", minutes, secs)
+            else -> String.format("%ds", secs)
         }
     }
 

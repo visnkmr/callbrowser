@@ -44,7 +44,7 @@ class CallLogAdapter(
         fun bind(call: CallLogEntry) {
             binding.apply {
                 textViewName.text = call.name ?: call.number
-                textViewNumber.text = call.number
+                textViewNumber.text = "${call.number} (${call.callCount})"
                 
                 val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
                 textViewDate.text = dateFormat.format(Date(call.date))

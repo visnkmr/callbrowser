@@ -73,6 +73,16 @@
                     android:textStyle="bold"
                     android:text="0 calls" />
 
+                <TextView
+                    android:id="@+id/textViewTotalTalkTime"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_horizontal"
+                    android:layout_marginTop="4dp"
+                    android:textSize="13sp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:text="Total: 0s" />
+
                 <!-- Action Buttons -->
                 <LinearLayout
                     android:layout_width="match_parent"
