@@ -31,6 +31,7 @@ class MainActivity : AppCompatActivity() {
     private var currentCallType = CALL_TYPE_ALL
     private var currentContactFilter = CONTACT_ALL
     private var currentContentType = CONTENT_TYPE_ALL
+    private var numbersOnlyMessages = false
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
@@ -44,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         private const val CONTENT_TYPE_ALL = 0
         private const val CONTENT_TYPE_CALLS = 1
         private const val CONTENT_TYPE_MESSAGES = 2
+        private const val CONTENT_TYPE_MESSAGES_NUMBERS_ONLY = 3
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,6 +85,8 @@ class MainActivity : AppCompatActivity() {
         binding.spinnerContentType.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 currentContentType = position
+                numbersOnlyMessages = (position == CONTENT_TYPE_MESSAGES_NUMBERS_ONLY)
+                loadData()
                 applyFilters()
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
@@ -203,7 +207,7 @@ class MainActivity : AppCompatActivity() {
         // Collect data from Room (instant)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                repository.getCombinedCommunicationList().collectLatest { calls ->
+                repository.getCombinedCommunicationList(numbersOnlyMessages).collectLatest { calls ->
                     uniqueCalls = calls
                     applyFilters()
                     binding.progressBar.visibility = View.GONE
@@ -223,6 +227,7 @@ class MainActivity : AppCompatActivity() {
             val contentMatch = when (currentContentType) {
                 CONTENT_TYPE_CALLS -> item.callCount > 0
                 CONTENT_TYPE_MESSAGES -> item.messageCount > 0 && item.type == -1
+                CONTENT_TYPE_MESSAGES_NUMBERS_ONLY -> item.messageCount > 0 && item.type == -1
                 else -> true
             }
 

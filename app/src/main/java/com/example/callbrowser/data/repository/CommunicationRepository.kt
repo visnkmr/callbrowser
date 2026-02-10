@@ -28,10 +28,10 @@ class CommunicationRepository(private val context: Context) {
     private var smsObserver: SmsObserver? = null
     
     // Combined data flow for main list
-    fun getCombinedCommunicationList(): Flow<List<CallLogEntry>> {
+    fun getCombinedCommunicationList(numbersOnly: Boolean = false): Flow<List<CallLogEntry>> {
         return combine(
             callDao.getUniqueNumbersWithCallCount(),
-            messageDao.getUniqueNumbersWithMessageCount()
+            if (numbersOnly) messageDao.getUniqueNumbersWithMessageCount() else messageDao.getUniqueNumbersWithMessageCountAll()
         ) { callSummaries, messageSummaries ->
             
             // Create a map of normalized numbers to message summaries
@@ -85,8 +85,8 @@ class CommunicationRepository(private val context: Context) {
         }
     }
     
-    // Get detailed history for a specific number
-    suspend fun getDetailedHistory(phoneNumber: String): List<Any> {
+    // Get detailed history for a specific number with pagination support
+    suspend fun getDetailedHistory(phoneNumber: String, limit: Int = 500): List<Any> {
         val normalizedNumber = normalizePhoneNumber(phoneNumber)
         
         val calls = callDao.getCallsForNumberSync(normalizedNumber).map { entity ->
@@ -114,14 +114,16 @@ class CommunicationRepository(private val context: Context) {
             )
         }
         
-        // Combine and sort by date
-        return (calls + messages).sortedByDescending {
-            when (it) {
-                is CallLogEntry -> it.date
-                is MessageEntry -> it.date
-                else -> 0L
+        // Combine and sort by date, then limit to prevent UI hanging
+        return (calls + messages)
+            .sortedByDescending {
+                when (it) {
+                    is CallLogEntry -> it.date
+                    is MessageEntry -> it.date
+                    else -> 0L
+                }
             }
-        }
+            .take(limit)
     }
     
     // Initial full sync

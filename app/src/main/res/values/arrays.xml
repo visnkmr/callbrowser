@@ -3,6 +3,7 @@
         <item>All</item>
         <item>Calls Only</item>
         <item>Messages Only</item>
+        <item>Messages (Numbers Only)</item>
     </string-array>
 
     <string-array name="call_types">

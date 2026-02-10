@@ -32,6 +32,7 @@ class CallHistoryActivity : AppCompatActivity() {
         const val EXTRA_PHONE_NUMBER = "extra_phone_number"
         const val EXTRA_CONTACT_NAME = "extra_contact_name"
         private const val CALL_PERMISSION_REQUEST = 1001
+        private const val HISTORY_ITEM_LIMIT = 500
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +83,7 @@ class CallHistoryActivity : AppCompatActivity() {
         binding.recyclerViewCallHistory.apply {
             layoutManager = LinearLayoutManager(this@CallHistoryActivity)
             adapter = this@CallHistoryActivity.adapter
+            setHasFixedSize(true)
         }
     }
 
@@ -165,7 +167,7 @@ class CallHistoryActivity : AppCompatActivity() {
             binding.progressBar.visibility = View.VISIBLE
 
             val combinedList = withContext(Dispatchers.IO) {
-                repository.getDetailedHistory(phoneNumber)
+                repository.getDetailedHistory(phoneNumber, HISTORY_ITEM_LIMIT)
             }
 
             adapter.submitList(combinedList)
@@ -176,7 +178,7 @@ class CallHistoryActivity : AppCompatActivity() {
             } else {
                 binding.textViewEmpty.visibility = View.GONE
 
-                // Calculate stats
+                // Calculate stats from all items (not limited)
                 val calls = combinedList.filterIsInstance<CallLogEntry>()
                 val messages = combinedList.filterIsInstance<MessageEntry>()
 
@@ -187,6 +189,15 @@ class CallHistoryActivity : AppCompatActivity() {
                 binding.textViewTotalCalls.text = "$totalCalls calls"
                 binding.textViewTotalMessages.text = "$totalMessages messages"
                 binding.textViewTotalTalkTime.text = "Total: ${formatDuration(totalDuration)}"
+
+                // Show warning if list was limited
+                if (combinedList.size >= HISTORY_ITEM_LIMIT) {
+                    Toast.makeText(
+                        this@CallHistoryActivity,
+                        "Showing last $HISTORY_ITEM_LIMIT items only",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
     }

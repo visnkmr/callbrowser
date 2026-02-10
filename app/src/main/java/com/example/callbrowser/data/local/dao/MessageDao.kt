@@ -24,10 +24,21 @@ interface MessageDao {
                COUNT(*) as messageCount, MAX(type) as type, 
                isContactSaved, read
         FROM messages 
+        WHERE address GLOB '*[0-9]*'
         GROUP BY normalizedAddress 
         ORDER BY date DESC
     """)
     fun getUniqueNumbersWithMessageCount(): Flow<List<NumberMessageSummary>>
+
+    @Query("""
+        SELECT normalizedAddress, address, name, MAX(date) as date, 
+               COUNT(*) as messageCount, MAX(type) as type, 
+               isContactSaved, read
+        FROM messages 
+        GROUP BY normalizedAddress 
+        ORDER BY date DESC
+    """)
+    fun getUniqueNumbersWithMessageCountAll(): Flow<List<NumberMessageSummary>>
     
     @Query("SELECT COUNT(*) FROM messages WHERE normalizedAddress = :normalizedNumber")
     suspend fun getMessageCountForNumber(normalizedNumber: String): Int
