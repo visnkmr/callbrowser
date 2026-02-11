@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.callbrowser.data.repository.CommunicationRepository
 import com.example.callbrowser.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,6 +33,7 @@ class MainActivity : AppCompatActivity() {
     private var currentContactFilter = CONTACT_ALL
     private var currentContentType = CONTENT_TYPE_ALL
     private var numbersOnlyMessages = false
+    private var dataCollectionJob: Job? = null
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
@@ -62,6 +64,12 @@ class MainActivity : AppCompatActivity() {
         checkPermissions()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        // Cancel data collection job to prevent memory leaks
+        dataCollectionJob?.cancel()
+    }
+
     override fun onResume() {
         super.onResume()
         // Start listening for system changes
@@ -84,10 +92,17 @@ class MainActivity : AppCompatActivity() {
         binding.spinnerContentType.adapter = contentTypeAdapter
         binding.spinnerContentType.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val previousContentType = currentContentType
                 currentContentType = position
-                numbersOnlyMessages = (position == CONTENT_TYPE_MESSAGES_NUMBERS_ONLY)
-                loadData()
-                applyFilters()
+                val newNumbersOnlyMessages = (position == CONTENT_TYPE_MESSAGES_NUMBERS_ONLY)
+                
+                // Only reload if the numbersOnlyMessages filter actually changed
+                if (newNumbersOnlyMessages != numbersOnlyMessages || position == CONTENT_TYPE_MESSAGES_NUMBERS_ONLY || previousContentType == CONTENT_TYPE_MESSAGES_NUMBERS_ONLY) {
+                    numbersOnlyMessages = newNumbersOnlyMessages
+                    reloadData()
+                } else {
+                    applyFilters()
+                }
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -140,6 +155,10 @@ class MainActivity : AppCompatActivity() {
     private fun setupButtons() {
         binding.buttonGrantPermissions.setOnClickListener {
             requestPermissions()
+        }
+
+        binding.buttonViewContacts.setOnClickListener {
+            startActivity(Intent(this, ContactsActivity::class.java))
         }
     }
 
@@ -201,16 +220,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadData() {
-        // Show progress only for initial sync
+        // Show loading state
         binding.progressBar.visibility = View.VISIBLE
+        binding.textViewLoading.visibility = View.VISIBLE
+        binding.recyclerViewCalls.visibility = View.GONE
+        binding.textViewEmpty.visibility = View.GONE
+
+        // Cancel any existing collection job
+        dataCollectionJob?.cancel()
 
         // Collect data from Room (instant)
-        lifecycleScope.launch {
+        dataCollectionJob = lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 repository.getCombinedCommunicationList(numbersOnlyMessages).collectLatest { calls ->
                     uniqueCalls = calls
                     applyFilters()
+                    
+                    // Hide loading indicators
                     binding.progressBar.visibility = View.GONE
+                    binding.textViewLoading.visibility = View.GONE
+                    binding.recyclerViewCalls.visibility = View.VISIBLE
                 }
             }
         }
@@ -218,6 +247,32 @@ class MainActivity : AppCompatActivity() {
         // Perform initial sync in background (one-time)
         lifecycleScope.launch(Dispatchers.IO) {
             repository.performInitialSync()
+        }
+    }
+
+    private fun reloadData() {
+        // Show loading state when filter changes
+        binding.progressBar.visibility = View.VISIBLE
+        binding.textViewLoading.visibility = View.VISIBLE
+        binding.recyclerViewCalls.visibility = View.GONE
+        binding.textViewEmpty.visibility = View.GONE
+        
+        // Cancel existing job
+        dataCollectionJob?.cancel()
+        
+        // Start fresh collection with new filter
+        dataCollectionJob = lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                repository.getCombinedCommunicationList(numbersOnlyMessages).collectLatest { calls ->
+                    uniqueCalls = calls
+                    applyFilters()
+                    
+                    // Hide loading indicators
+                    binding.progressBar.visibility = View.GONE
+                    binding.textViewLoading.visibility = View.GONE
+                    binding.recyclerViewCalls.visibility = View.VISIBLE
+                }
+            }
         }
     }
 

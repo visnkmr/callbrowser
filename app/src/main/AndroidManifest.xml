@@ -27,6 +27,11 @@
             android:name=".CallHistoryActivity"
             android:parentActivityName=".MainActivity"
             android:exported="false" />
+        
+        <activity
+            android:name=".ContactsActivity"
+            android:parentActivityName=".MainActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

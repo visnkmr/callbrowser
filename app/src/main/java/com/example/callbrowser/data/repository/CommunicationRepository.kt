@@ -8,8 +8,10 @@ import com.example.callbrowser.CallLogEntry
 import com.example.callbrowser.MessageEntry
 import com.example.callbrowser.data.local.AppDatabase
 import com.example.callbrowser.data.local.entity.CallEntity
+import com.example.callbrowser.data.local.entity.ContactEntity
 import com.example.callbrowser.data.local.entity.MessageEntity
 import com.example.callbrowser.data.sync.CallLogObserver
+import com.example.callbrowser.data.sync.ContactObserver
 import com.example.callbrowser.data.sync.SmsObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -19,13 +21,17 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 class CommunicationRepository(private val context: Context) {
-    
+
     private val database = AppDatabase.getDatabase(context)
     private val callDao = database.callDao()
     private val messageDao = database.messageDao()
-    
+    private val contactDao = database.contactDao()
+
+    val contactRepository = ContactRepository(context, contactDao)
+
     private var callLogObserver: CallLogObserver? = null
     private var smsObserver: SmsObserver? = null
+    private var contactObserver: ContactObserver? = null
     
     // Combined data flow for main list
     fun getCombinedCommunicationList(numbersOnly: Boolean = false): Flow<List<CallLogEntry>> {
@@ -181,11 +187,14 @@ class CommunicationRepository(private val context: Context) {
     
     // Initial full sync
     suspend fun performInitialSync() = withContext(Dispatchers.IO) {
+        // Sync contacts first
+        contactRepository.performFullSync()
+
         val contactNumbers = fetchContactNumbers()
-        
+
         // Sync calls
         syncAllCalls(contactNumbers)
-        
+
         // Sync messages
         syncAllMessages(contactNumbers)
     }
@@ -336,20 +345,29 @@ class CommunicationRepository(private val context: Context) {
                 register()
             }
         }
-        
+
         if (smsObserver == null) {
             smsObserver = SmsObserver(context, messageDao).apply {
                 register()
             }
         }
+
+        if (contactObserver == null) {
+            contactObserver = ContactObserver(context, contactRepository).apply {
+                register()
+            }
+        }
     }
-    
+
     fun stopObservers() {
         callLogObserver?.unregister()
         callLogObserver = null
-        
+
         smsObserver?.unregister()
         smsObserver = null
+
+        contactObserver?.unregister()
+        contactObserver = null
     }
     
     private fun normalizePhoneNumber(number: String): String {
