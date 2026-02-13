@@ -129,6 +129,16 @@
                 app:cornerRadius="24dp"
                 android:textSize="12sp" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/buttonPickDate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Go to Date"
+                style="?attr/materialButtonOutlinedStyle"
+                app:cornerRadius="24dp"
+                android:textSize="12sp"
+                android:layout_marginStart="8dp" />
+
         </LinearLayout>
 
     </LinearLayout>

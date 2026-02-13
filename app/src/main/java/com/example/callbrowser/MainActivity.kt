@@ -1,12 +1,14 @@
 package com.example.callbrowser
 
 import android.Manifest
+import android.app.DatePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -21,6 +23,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -34,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private var currentContentType = CONTENT_TYPE_ALL
     private var numbersOnlyMessages = false
     private var dataCollectionJob: Job? = null
+    private var selectedDate: Long? = null // Timestamp for date filtering
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
@@ -159,6 +165,49 @@ class MainActivity : AppCompatActivity() {
 
         binding.buttonViewContacts.setOnClickListener {
             startActivity(Intent(this, ContactsActivity::class.java))
+        }
+
+        binding.buttonPickDate.setOnClickListener {
+            showDatePicker()
+        }
+        
+        binding.buttonPickDate.setOnLongClickListener {
+            if (selectedDate != null) {
+                clearDateFilter()
+                Toast.makeText(this, "Date filter cleared", Toast.LENGTH_SHORT).show()
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    private fun showDatePicker() {
+        val calendar = Calendar.getInstance()
+        
+        DatePickerDialog(
+            this,
+            { _, year, month, dayOfMonth ->
+                val selectedCalendar = Calendar.getInstance().apply {
+                    set(year, month, dayOfMonth, 0, 0, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                selectedDate = selectedCalendar.timeInMillis
+                applyFilters()
+                updateDateButtonText()
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+
+    private fun updateDateButtonText() {
+        if (selectedDate != null) {
+            val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
+            binding.buttonPickDate.text = dateFormat.format(selectedDate)
+        } else {
+            binding.buttonPickDate.text = "Go to Date"
         }
     }
 
@@ -301,11 +350,37 @@ class MainActivity : AppCompatActivity() {
                 else -> true
             }
 
-            contentMatch && typeMatch && contactMatch
+            // Date filter
+            val dateMatch = if (selectedDate != null) {
+                isSameDay(item.date, selectedDate!!)
+            } else {
+                true
+            }
+
+            contentMatch && typeMatch && contactMatch && dateMatch
         }
 
         callAdapter.submitList(filteredItems)
         binding.textViewEmpty.visibility = if (filteredItems.isEmpty()) View.VISIBLE else View.GONE
-        binding.textViewResultCount.text = "${filteredItems.size} contacts"
+        
+        // Update result count text to show if date filter is active
+        val dateText = if (selectedDate != null) {
+            val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+            " (${dateFormat.format(selectedDate)})"
+        } else ""
+        binding.textViewResultCount.text = "${filteredItems.size} contacts$dateText"
+    }
+
+    private fun isSameDay(timestamp1: Long, timestamp2: Long): Boolean {
+        val cal1 = Calendar.getInstance().apply { timeInMillis = timestamp1 }
+        val cal2 = Calendar.getInstance().apply { timeInMillis = timestamp2 }
+        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+               cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+    }
+
+    fun clearDateFilter() {
+        selectedDate = null
+        updateDateButtonText()
+        applyFilters()
     }
 }
